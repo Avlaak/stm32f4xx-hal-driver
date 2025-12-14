@@ -334,6 +334,8 @@ static void SD_DMARxAbort(DMA_HandleTypeDef *hdma);
   */
 HAL_StatusTypeDef HAL_SD_Init(SD_HandleTypeDef *hsd)
 {
+  uint32_t tickstart;
+
   /* Check the SD handle allocation */
   if(hsd == NULL)
   {
@@ -379,6 +381,24 @@ HAL_StatusTypeDef HAL_SD_Init(SD_HandleTypeDef *hsd)
   if (HAL_SD_InitCard(hsd) != HAL_OK)
   {
     return HAL_ERROR;
+  }
+
+  /* Configure the bus wide */
+  if (HAL_SD_ConfigWideBusOperation(hsd, hsd->Init.BusWide) != HAL_OK)
+  {
+    return HAL_ERROR;
+  }
+
+  /* Verify that SD card is ready to use after Initialization */
+  tickstart = HAL_GetTick();
+  while ((HAL_SD_GetCardState(hsd) != HAL_SD_CARD_TRANSFER))
+  {
+    if ((HAL_GetTick() - tickstart) >=  SDMMC_SWDATATIMEOUT)
+    {
+      hsd->ErrorCode = HAL_SD_ERROR_TIMEOUT;
+      hsd->State = HAL_SD_STATE_READY;
+      return HAL_TIMEOUT;
+    }
   }
 
   /* Initialize the error code */
@@ -2675,6 +2695,7 @@ static uint32_t SD_InitCard(SD_HandleTypeDef *hsd)
   HAL_SD_CardCSDTypeDef CSD;
   uint32_t errorstate;
   uint16_t sd_rca = 1U;
+  SD_InitTypeDef Init;
 
   /* Check the power State */
   if(SDIO_GetPowerState(hsd->Instance) == 0U)
@@ -2748,8 +2769,10 @@ static uint32_t SD_InitCard(SD_HandleTypeDef *hsd)
     return errorstate;
   }
 
-  /* Configure SDIO peripheral interface */
-  (void)SDIO_Init(hsd->Instance, hsd->Init);
+  /* Configure the SDIO peripheral */
+  Init = hsd->Init;
+  Init.BusWide = SDIO_BUS_WIDE_1B;
+  (void)SDIO_Init(hsd->Instance, Init);
 
   /* All cards are initialized */
   return HAL_SD_ERROR_NONE;
